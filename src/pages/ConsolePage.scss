@@ -66,7 +66,8 @@
       }
     }
     .content-right {
-      width: 300px;
+      width: 40%;
+      min-width: 300px;
       flex-shrink: 0;
       display: flex;
       flex-direction: column;
@@ -101,8 +102,8 @@
         }
       }
       & > div.kv {
-        height: 250px;
-        max-height: 250px;
+        height: 400px;
+        max-height: 400px;
         white-space: pre;
         background-color: #ececf1;
         .content-block-body {
@@ -110,10 +111,30 @@
           margin-top: 56px;
         }
       }
+      & > div.code {
+        height: 400px;
+        max-height: 400px;
+        white-space: pre;
+        background-color: #ececf1;
+
+        .content-block-body {
+          padding: 16px;
+          margin-top: 56px;
+
+          pre {
+            margin: 0;
+            code {
+              font-family: inherit;
+            }
+          }
+        }
+      }
     }
     .content-logs {
-      flex-grow: 1;
+      flex-grow: 0;
       display: flex;
+      width: 60%;
+      min-width: 400px;
       flex-direction: column;
       overflow: hidden;
       & > div {
