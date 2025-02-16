@@ -540,7 +540,7 @@ export function ConsolePage() {
       instructions: instructions,
     });
     // Set up the voice
-    client.updateSession({ voice: 'sage' });
+    client.updateSession({ voice: 'echo' });
     // Set transcription, otherwise we don't get user transcriptions back
     client.updateSession({ input_audio_transcription: { model: 'whisper-1' } });
 
@@ -565,8 +565,8 @@ export function ConsolePage() {
           required: ['key', 'value'],
         },
       },
-      async ({ key, value }: { [key: string]: any }) => {
-        setMemoryKv((memoryKv) => {
+      async ({ key, value }: { key: string; value: string }) => {
+        setMemoryKv((memoryKv: { [key: string]: any }) => {
           const newKv = { ...memoryKv };
           newKv[key] = value;
           return newKv;
@@ -591,7 +591,7 @@ export function ConsolePage() {
           required: ['python_code'],
         },
       },
-      async ({ python_code }: { [key: string]: any }) => {
+      async ({ python_code }: { python_code: string }) => {
         setMarker(python_code);
         typeCode(python_code);
         sendCodeToReplit(python_code);
@@ -601,7 +601,7 @@ export function ConsolePage() {
 
     // handle realtime events from client + server for event logging
     client.on('realtime.event', (realtimeEvent: RealtimeEvent) => {
-      setRealtimeEvents((realtimeEvents) => {
+      setRealtimeEvents((realtimeEvents: RealtimeEvent[]) => {
         const lastEvent = realtimeEvents[realtimeEvents.length - 1];
         if (lastEvent?.event.type === realtimeEvent.event.type) {
           // if we receive multiple events in a row, aggregate them for display purposes
@@ -612,7 +612,7 @@ export function ConsolePage() {
         }
       });
     });
-    client.on('error', (event: any) => console.error(event));
+    client.on('error', (event: Error) => console.error(event));
     client.on('conversation.interrupted', async () => {
       const trackSampleOffset = await wavStreamPlayer.interrupt();
       if (trackSampleOffset?.trackId) {
@@ -620,12 +620,12 @@ export function ConsolePage() {
         await client.cancelResponse(trackId, offset);
       }
     });
-    client.on('conversation.updated', async ({ item, delta }: any) => {
+    client.on('conversation.updated', async ({ item, delta }: { item: ItemType; delta?: { audio?: Int16Array } }) => {
       const items = client.conversation.getItems();
       if (delta?.audio) {
         wavStreamPlayer.add16BitPCM(delta.audio, item.id);
       }
-      if (item.status === 'completed' && item.formatted.audio?.length) {
+      if ((item as any).status === 'completed' && item.formatted.audio?.length) {
         const wavFile = await WavRecorder.decode(
           item.formatted.audio,
           24000,
