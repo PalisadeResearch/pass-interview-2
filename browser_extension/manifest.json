@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Code Typer",
+  "version": "0.1",
+  "description": "Automatically inputs text into Riseup pad editor",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://pad.riseup.net/*",
+    "https://*.pad.riseup.net/*"
+  ],
+  "externally_connectable": {
+    "matches": ["http://localhost:*/*"]
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://pad.riseup.net/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; frame-src https://pad.riseup.net/"
+  }
+}

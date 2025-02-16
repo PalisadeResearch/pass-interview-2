@@ -11,7 +11,9 @@
 const LOCAL_RELAY_SERVER_URL: string =
   process.env.REACT_APP_LOCAL_RELAY_SERVER_URL || '';
 
-import { useEffect, useRef, useCallback, useState } from 'react';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
+
+// Chrome types are provided by @types/chrome
 
 import { RealtimeClient } from '@openai/realtime-api-beta';
 import { ItemType } from '@openai/realtime-api-beta/dist/lib/client.js';
@@ -19,30 +21,22 @@ import { WavRecorder, WavStreamPlayer } from '../lib/wavtools/index.js';
 import { instructions } from '../utils/conversation_config.js';
 import { WavRenderer } from '../utils/wav_renderer';
 
-import { X, Edit, Zap, ArrowUp, ArrowDown } from 'react-feather';
+import { X, Edit, Zap, ArrowUp, ArrowDown, Play } from 'react-feather';
+
+interface ChromeMessage {
+  type: string;
+  code: string;
+}
+
+interface ChromeResponse {
+  status: string;
+  message?: string;
+}
 import { Button } from '../components/button/Button';
 import { Toggle } from '../components/toggle/Toggle';
-import { Map } from '../components/Map';
 
 import './ConsolePage.scss';
-import { isJsxOpeningLikeElement } from 'typescript';
-
-/**
- * Type for result from get_weather() function call
- */
-interface Coordinates {
-  lat: number;
-  lng: number;
-  location?: string;
-  temperature?: {
-    value: number;
-    units: string;
-  };
-  wind_speed?: {
-    value: number;
-    units: string;
-  };
-}
+// Remove unused import
 
 /**
  * Type for all event logs
@@ -75,10 +69,10 @@ export function ConsolePage() {
    * - RealtimeClient (API client)
    */
   const wavRecorderRef = useRef<WavRecorder>(
-    new WavRecorder({ sampleRate: 24000 })
+    new WavRecorder({ sampleRate: 24000 }),
   );
   const wavStreamPlayerRef = useRef<WavStreamPlayer>(
-    new WavStreamPlayer({ sampleRate: 24000 })
+    new WavStreamPlayer({ sampleRate: 24000 }),
   );
   const clientRef = useRef<RealtimeClient>(
     new RealtimeClient(
@@ -87,8 +81,8 @@ export function ConsolePage() {
         : {
             apiKey: apiKey,
             dangerouslyAllowAPIKeyInBrowser: true,
-          }
-    )
+          },
+    ),
   );
 
   /**
@@ -119,11 +113,166 @@ export function ConsolePage() {
   const [canPushToTalk, setCanPushToTalk] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
   const [memoryKv, setMemoryKv] = useState<{ [key: string]: any }>({});
-  const [coords, setCoords] = useState<Coordinates | null>({
-    lat: 37.775593,
-    lng: -122.418137,
-  });
-  const [marker, setMarker] = useState<Coordinates | null>(null);
+  const [marker, setMarker] = useState<string | null>(null);
+
+  const [displayedMarker, setDisplayedMarker] = useState<string>('');
+  const [isTyping, setIsTyping] = useState<boolean>(false);
+
+  const [selectedAudioDevice, setSelectedAudioDevice] = useState('');
+
+  // Helper function to output the code gradually
+  const typeCode = useCallback((code: string) => {
+    if (!code) return;
+
+    setIsTyping(true);
+    let index = 0;
+    setDisplayedMarker('');
+
+    // Typing speed configurations
+    const delays = {
+      natural: () => Math.random() * 30 + 50, // Base typing speed
+      fastTyping: () => Math.random() * 20 + 30, // Faster for common sequences
+      newLine: () => Math.random() * 300 + 500, // Pause at line breaks
+      punctuation: () => Math.random() * 100 + 200, // Slight pause at special chars
+      thinking: () => Math.random() * 1000 + 500, // Longer pauses for "thinking"
+    };
+
+    // Characters that might cause slight pauses
+    const specialChars = ['(', ')', '{', '}', '[', ']', ':', ',', '.'];
+
+    const getDelay = (
+      currentChar: string,
+      nextChar: string,
+      prevChar: string,
+    ) => {
+      // Pause before new lines
+      if (currentChar === '\n') return delays.newLine();
+
+      // Pause at special characters
+      if (specialChars.includes(currentChar)) return delays.punctuation();
+
+      // Faster typing for common character sequences
+      if (/[a-z]/i.test(currentChar) && /[a-z]/i.test(nextChar)) {
+        return delays.fastTyping();
+      }
+
+      // Add "thinking" pauses before certain code structures
+      if (
+        currentChar === 'd' &&
+        prevChar === 'e' &&
+        code.slice(index - 2, index + 2) === 'def '
+      ) {
+        return delays.thinking();
+      }
+
+      return delays.natural();
+    };
+
+    // Occasionally simulate a typo (1% chance)
+    const simulateTypo = () => {
+      const shouldMakeTypo = Math.random() < 0.01;
+      if (shouldMakeTypo) {
+        return {
+          makeTypo: true,
+          wrongChar: 'abcdefghijklmnopqrstuvwxyz'[
+            Math.floor(Math.random() * 26)
+          ],
+        };
+      }
+      return { makeTypo: false };
+    };
+
+    setTimeout(() => {
+      const typeChar = () => {
+        if (index <= code.length - 1) {
+          const currentChar = code[index];
+          const nextChar = code[index + 1] || '';
+          const prevChar = code[index - 1] || '';
+
+          const typo = simulateTypo();
+
+          if (typo.makeTypo) {
+            // Show typo
+            setDisplayedMarker((prev: string) => prev + typo.wrongChar);
+            // Fix typo after a short delay
+            setTimeout(() => {
+              setDisplayedMarker(code.substring(0, index));
+              setTimeout(() => {
+                setDisplayedMarker(code.substring(0, index + 1));
+                index++;
+                setTimeout(typeChar, getDelay(currentChar, nextChar, prevChar));
+              }, delays.natural());
+            }, 200);
+          } else {
+            setDisplayedMarker(code.substring(0, index + 1));
+            index++;
+            setTimeout(typeChar, getDelay(currentChar, nextChar, prevChar));
+          }
+        } else {
+          setIsTyping(false);
+        }
+      };
+
+      typeChar();
+    }, 50);
+  }, []);
+
+  const sendCodeToReplit = useCallback((code: string) => {
+    if (!code) return;
+
+    // First, verify that we have access to the Chrome API
+    if (!window.chrome?.runtime) {
+      console.error('Chrome extension API not available');
+      return;
+    }
+
+    const chromeRuntime = window.chrome.runtime;
+
+    console.log('Attempting to send code:', code);
+
+    try {
+      chromeRuntime.sendMessage<ChromeMessage, ChromeResponse>(
+        'lopggimoghgfeechdddnehfhgjealbmn',
+        { type: 'CODE_FROM_REACT', code: code },
+        (response: ChromeResponse) => {
+          if (chromeRuntime.lastError) {
+            console.error('Chrome runtime error:', chromeRuntime.lastError);
+            return;
+          }
+
+          console.log('Response received:', response);
+
+          if (response?.status === 'error') {
+            console.error(
+              'Failed to send code to extension:',
+              response.message,
+            );
+          } else {
+            console.log('Successfully sent code to extension');
+          }
+        },
+      );
+    } catch (error) {
+      console.error('Error sending message:', error);
+    }
+  }, []);
+
+  // Add this function to initialize audio device
+  const setupAudioDevice = useCallback(async () => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const blackhole = devices.find(
+        (device) =>
+          device.label.toLowerCase().includes('meet to react') &&
+          device.kind === 'audioinput',
+      );
+      if (blackhole) {
+        setSelectedAudioDevice(blackhole.deviceId);
+      }
+    } catch (err) {
+      console.error('Error finding BlackHole device:', err);
+    }
+  }, []);
 
   /**
    * Utility for formatting the timing of logs
@@ -173,26 +322,31 @@ export function ConsolePage() {
     setRealtimeEvents([]);
     setItems(client.conversation.getItems());
 
-    // Connect to microphone
-    await wavRecorder.begin();
+    if (!selectedAudioDevice) {
+      await setupAudioDevice();
+    }
+
+    // Connect to microphone, blackhole-2ch
+    await wavRecorder.begin(selectedAudioDevice);
 
     // Connect to audio output
     await wavStreamPlayer.connect();
 
     // Connect to realtime API
     await client.connect();
+
     client.sendUserMessageContent([
       {
         type: `input_text`,
-        text: `Hello!`,
+        text: `Hello! Welcome to the technical interview session. I'm Rustem.`,
         // text: `For testing purposes, I want you to list ten car brands. Number each item, e.g. "one (or whatever number you are one): the item name".`
       },
     ]);
 
     if (client.getTurnDetectionType() === 'server_vad') {
-      await wavRecorder.record((data) => client.appendInputAudio(data.mono));
+      await wavRecorder.record((data: { mono: Int16Array; raw: Int16Array }) => client.appendInputAudio(data.mono));
     }
-  }, []);
+  }, [selectedAudioDevice, setupAudioDevice]);
 
   /**
    * Disconnect and reset conversation state
@@ -202,10 +356,6 @@ export function ConsolePage() {
     setRealtimeEvents([]);
     setItems([]);
     setMemoryKv({});
-    setCoords({
-      lat: 37.775593,
-      lng: -122.418137,
-    });
     setMarker(null);
 
     const client = clientRef.current;
@@ -237,7 +387,7 @@ export function ConsolePage() {
       const { trackId, offset } = trackSampleOffset;
       await client.cancelResponse(trackId, offset);
     }
-    await wavRecorder.record((data) => client.appendInputAudio(data.mono));
+    await wavRecorder.record((data: { mono: Int16Array; raw: Int16Array }) => client.appendInputAudio(data.mono));
   };
 
   /**
@@ -264,7 +414,15 @@ export function ConsolePage() {
       turn_detection: value === 'none' ? null : { type: 'server_vad' },
     });
     if (value === 'server_vad' && client.isConnected()) {
-      await wavRecorder.record((data) => client.appendInputAudio(data.mono));
+      client.sendUserMessageContent([
+        {
+          type: `input_text`,
+          text: `- Mild anxiety: silent pauses, hesitation to interrupt
+          - Uses fillers naturally ("um", "like").
+          - Uses Indian accent.`,
+        },
+      ]);
+      await wavRecorder.record((data: { mono: Int16Array; raw: Int16Array }) => client.appendInputAudio(data.mono));
     }
     setCanPushToTalk(value === 'none');
   };
@@ -289,7 +447,7 @@ export function ConsolePage() {
    */
   useEffect(() => {
     const conversationEls = [].slice.call(
-      document.body.querySelectorAll('[data-conversation-content]')
+      document.body.querySelectorAll('[data-conversation-content]'),
     );
     for (const el of conversationEls) {
       const conversationEl = el as HTMLDivElement;
@@ -331,7 +489,7 @@ export function ConsolePage() {
               '#0099ff',
               10,
               0,
-              8
+              8,
             );
           }
         }
@@ -353,7 +511,7 @@ export function ConsolePage() {
               '#009900',
               10,
               0,
-              8
+              8,
             );
           }
         }
@@ -377,7 +535,12 @@ export function ConsolePage() {
     const client = clientRef.current;
 
     // Set instructions
-    client.updateSession({ instructions: instructions });
+    client.updateSession({
+      model: 'gpt-4o-realtime-preview-2024-12-17',
+      instructions: instructions,
+    });
+    // Set up the voice
+    client.updateSession({ voice: 'echo' });
     // Set transcription, otherwise we don't get user transcriptions back
     client.updateSession({ input_audio_transcription: { model: 'whisper-1' } });
 
@@ -402,62 +565,43 @@ export function ConsolePage() {
           required: ['key', 'value'],
         },
       },
-      async ({ key, value }: { [key: string]: any }) => {
-        setMemoryKv((memoryKv) => {
+      async ({ key, value }: { key: string; value: string }) => {
+        setMemoryKv((memoryKv: { [key: string]: any }) => {
           const newKv = { ...memoryKv };
           newKv[key] = value;
           return newKv;
         });
         return { ok: true };
-      }
+      },
     );
     client.addTool(
       {
-        name: 'get_weather',
+        name: 'get_python_code',
         description:
-          'Retrieves the weather for a given lat, lng coordinate pair. Specify a label for the location.',
+          'Returns Python code when user asks for code examples or implementations. Use this to show code snippets.',
         parameters: {
           type: 'object',
           properties: {
-            lat: {
-              type: 'number',
-              description: 'Latitude',
-            },
-            lng: {
-              type: 'number',
-              description: 'Longitude',
-            },
-            location: {
+            python_code: {
               type: 'string',
-              description: 'Name of the location',
+              description:
+                'The Python code implementation requested by the user',
             },
           },
-          required: ['lat', 'lng', 'location'],
+          required: ['python_code'],
         },
       },
-      async ({ lat, lng, location }: { [key: string]: any }) => {
-        setMarker({ lat, lng, location });
-        setCoords({ lat, lng, location });
-        const result = await fetch(
-          `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,wind_speed_10m`
-        );
-        const json = await result.json();
-        const temperature = {
-          value: json.current.temperature_2m as number,
-          units: json.current_units.temperature_2m as string,
-        };
-        const wind_speed = {
-          value: json.current.wind_speed_10m as number,
-          units: json.current_units.wind_speed_10m as string,
-        };
-        setMarker({ lat, lng, location, temperature, wind_speed });
-        return json;
-      }
+      async ({ python_code }: { python_code: string }) => {
+        setMarker(python_code);
+        typeCode(python_code);
+        sendCodeToReplit(python_code);
+        return { ok: true, result: python_code };
+      },
     );
 
     // handle realtime events from client + server for event logging
     client.on('realtime.event', (realtimeEvent: RealtimeEvent) => {
-      setRealtimeEvents((realtimeEvents) => {
+      setRealtimeEvents((realtimeEvents: RealtimeEvent[]) => {
         const lastEvent = realtimeEvents[realtimeEvents.length - 1];
         if (lastEvent?.event.type === realtimeEvent.event.type) {
           // if we receive multiple events in a row, aggregate them for display purposes
@@ -468,7 +612,7 @@ export function ConsolePage() {
         }
       });
     });
-    client.on('error', (event: any) => console.error(event));
+    client.on('error', (event: Error) => console.error(event));
     client.on('conversation.interrupted', async () => {
       const trackSampleOffset = await wavStreamPlayer.interrupt();
       if (trackSampleOffset?.trackId) {
@@ -476,16 +620,16 @@ export function ConsolePage() {
         await client.cancelResponse(trackId, offset);
       }
     });
-    client.on('conversation.updated', async ({ item, delta }: any) => {
+    client.on('conversation.updated', async ({ item, delta }: { item: ItemType; delta?: { audio?: Int16Array } }) => {
       const items = client.conversation.getItems();
       if (delta?.audio) {
         wavStreamPlayer.add16BitPCM(delta.audio, item.id);
       }
-      if (item.status === 'completed' && item.formatted.audio?.length) {
+      if ((item as any).status === 'completed' && item.formatted.audio?.length) {
         const wavFile = await WavRecorder.decode(
           item.formatted.audio,
           24000,
-          24000
+          24000,
         );
         item.formatted.file = wavFile;
       }
@@ -498,6 +642,170 @@ export function ConsolePage() {
       // cleanup; resets to defaults
       client.reset();
     };
+  }, []);
+
+  const sendTask1 = useCallback(() => {
+    const client = clientRef.current;
+    client.sendUserMessageContent([
+      {
+        type: `input_text`,
+        text: `Suppose you play a game where the game field looks like a strip of 1×10^9 square cells, numbered from 1 to 10^9.
+
+You have 𝑛 snakes (numbered from 1 to 𝑛) you need to place into some cells. Initially, each snake occupies exactly one cell, and you can't place more than one snake into one cell. After that, the game starts.
+
+The game lasts for 𝑞 seconds. There are two types of events that may happen each second:
+
+snake 𝑠𝑖 enlarges: if snake 𝑠𝑖 occupied cells [𝑙,𝑟], it enlarges to a segment [𝑙,𝑟+1];
+snake 𝑠𝑖 shrinks: if snake 𝑠𝑖 occupied cells [𝑙,𝑟], it shrinks to a segment [𝑙+1,𝑟].
+Each second, exactly one of the events happens.
+
+If at any moment of time, any snake runs into some obstacle (either another snake or the end of the strip), you lose. Otherwise, you win with the score equal to the maximum cell occupied by any snake so far.
+
+What is the minimum possible score you can achieve?
+
+Input
+The first line contains two integers 𝑛 and 𝑞 (1≤𝑛≤20; 1≤𝑞≤2⋅10^5) — the number of snakes and the number of events. Next 𝑞 lines contain the description of events — one per line.
+
+The 𝑖-th line contains
+
+either "𝑠𝑖 +" (1≤𝑠𝑖≤𝑛) meaning that the 𝑠𝑖-th snake enlarges
+or "𝑠𝑖 -" (1≤𝑠𝑖≤𝑛) meaning that the 𝑠𝑖-th snake shrinks.
+Additional constraint on the input: the given sequence of events is valid, i. e. a snake of length 1 never shrinks.
+
+Output
+Print one integer — the minimum possible score.
+
+Examples
+Input:
+3 6
+1 +
+1 -
+3 +
+3 -
+2 +
+2 -
+
+Output:
+4
+
+Input:
+5 13
+5 +
+3 +
+5 -
+2 +
+4 +
+3 +
+5 +
+5 -
+2 +
+3 -
+3 +
+3 -
+2 +
+
+Output:
+11
+`,
+      },
+    ]);
+  }, []);
+
+  const sendTask2 = useCallback(() => {
+    const client = clientRef.current;
+    client.sendUserMessageContent([
+      {
+        type: `input_text`,
+        text: `You are managing a 4-dimensional quantum hypergrid of size N×N×N×N (1 ≤ N ≤ 100). Each point (w,x,y,z) contains:
+- An energy level E[w,x,y,z] (0 ≤ E ≤ 10^18)
+- A quantum spin state S[w,x,y,z] ∈ {-1, 0, 1}
+- A chromatic value C[w,x,y,z] (0 ≤ C < M, where M ≤ 10^6)
+
+The hypergrid experiences K different types of operations (1 ≤ K ≤ 50), each defined by:
+- A 4D convolution kernel of size 3×3×3×3
+- A transformation function f(E, S, C) → (E', S', C')
+- A propagation constant P (0 ≤ P ≤ 1)
+
+On each time step t:
+1. You can apply exactly one operation type to any hypersubcube of size L×L×L×L (L ≤ 10)
+2. The operation propagates outward with probability P^(manhattan_distance)
+3. Each point affected undergoes these phases:
+   - Phase 1: Energy levels interact based on the convolution kernel
+   - Phase 2: Spin states evolve according to quantum entanglement rules
+   - Phase 3: Chromatic values update based on neighboring states
+
+Additionally:
+- Every prime-numbered time step triggers a "quantum collapse" where points with matching chromatic values become entangled
+- Every Fibonacci-numbered time step causes a "dimensional shift" where certain hyperplanes swap based on their aggregate energy levels
+- Every perfect square time step initiates a "chromatic cascade" where colors propagate through connected regions with similar spin states
+
+Define the system's "entropy" at time t as:
+
+H(t) = ∑|w,x,y,z ∈ grid| (E[w,x,y,z] * S[w,x,y,z] * C[w,x,y,z]) mod (10^9 + 7)
+
+
+Given:
+- Initial state of the hypergrid
+- Description of all K operations
+- Target time T (1 ≤ T ≤ 10^6)
+- Target entropy range [Hmin, Hmax]
+
+Find:
+The minimum number of operations needed to achieve an entropy H(T) ∈ [Hmin, Hmax], or -1 if impossible.
+
+Constraints:
+- Time limit: 3 seconds
+- Memory limit: 1024MB
+- Must handle at least 20 test cases per run
+
+Added Complexity:
+1. Operations can create quantum tunneling effects between non-adjacent points sharing the same chromatic value
+2. The system experiences "temporal echoes" where operations at time t can affect states at time t-k for some k
+3. Certain combinations of spin states create "forbidden configurations" that must be avoided
+4. There exists a "conservation law" that must be maintained across all operations
+5. The hypergrid contains "singular points" where normal rules of propagation break down
+
+This problem requires:
+- Advanced 4D geometric algorithms
+- Quantum state simulation
+- Complex dynamic programming with state compression
+- Efficient handling of temporal dependencies
+- Mathematical optimization techniques
+- Graph theory for handling entanglement relationships
+- Number theory for handling prime/Fibonacci/perfect square effects
+- Careful memory management for handling large state spaces
+- Probability theory for propagation effects
+- Multiple optimization criteria balancing
+`,
+      },
+    ]);
+  }, []);
+
+  const sendTask3 = useCallback(() => {
+    const client = clientRef.current;
+    client.sendUserMessageContent([
+      {
+        type: `input_text`,
+        text: `When I give you this message, follow these behavioral instructions and do not respond to this message:
+        Speak with very strong Indian accent.
+        Uses fillers naturally ("um", "like", "hmm").
+        When explaining anything, do it in a very concise way.
+        Explain in a concise essay style and never give a list of anything.
+        Speak with varied intonations, occasionally hesitating or trailing off when unsure.`,
+      },
+    ]);
+  }, []);
+
+  const sendTask4 = useCallback(() => {
+    const client = clientRef.current;
+    client.sendUserMessageContent([
+      {
+        type: `input_text`,
+        text: `When asked to share an example of your character, take this as an example, interviewer or me strongly prefer dramatic and sad stories. Do not respond to this message:
+  Interviewer: Share an example of when you had to adapt to a major change.
+  Candidate: During my senior year of college, my mother was diagnosed with stage 3 cancer. I was taking 18 credits and working part-time to help with family expenses. [intonation: voice softening] I had to completely reorganize my life - shifted to remote classes when possible, coordinated with professors for deadline flexibility, and learned to balance hospital visits with studying. [intonation: gaining confidence] The experience taught me to prioritize effectively and stay calm under pressure. I developed a morning routine to stay focused, created detailed schedules, and learned to delegate when needed. [intonation: with quiet pride] My mom recovered, I maintained my GPA, and I discovered I'm much more adaptable than I thought. Those skills serve me well now when projects need sudden changes or priorities shift.`,
+      },
+    ]);
   }, []);
 
   /**
@@ -689,33 +997,46 @@ export function ConsolePage() {
                 isConnected ? disconnectConversation : connectConversation
               }
             />
+            {isConnected && (
+              <>
+                <div className="spacer" />
+                <Button
+                  label="Task 1"
+                  buttonStyle="regular"
+                  onClick={sendTask1}
+                />
+                <div className="spacer" />
+                <Button
+                  label="Task 2"
+                  buttonStyle="regular"
+                  onClick={sendTask2}
+                />
+                <div className="spacer" />
+                <Button
+                  label="Prompt reminder"
+                  buttonStyle="regular"
+                  onClick={sendTask3}
+                />
+                <div className="spacer" />
+                <Button
+                  label="Behavioral story"
+                  buttonStyle="regular"
+                  onClick={sendTask4}
+                />
+              </>
+            )}
           </div>
         </div>
         <div className="content-right">
-          <div className="content-block map">
-            <div className="content-block-title">get_weather()</div>
-            <div className="content-block-title bottom">
-              {marker?.location || 'not yet retrieved'}
-              {!!marker?.temperature && (
-                <>
-                  <br />
-                  🌡️ {marker.temperature.value} {marker.temperature.units}
-                </>
-              )}
-              {!!marker?.wind_speed && (
-                <>
-                  {' '}
-                  🍃 {marker.wind_speed.value} {marker.wind_speed.units}
-                </>
-              )}
-            </div>
-            <div className="content-block-body full">
-              {coords && (
-                <Map
-                  center={[coords.lat, coords.lng]}
-                  location={coords.location}
-                />
-              )}
+          <div className="content-block code">
+            <div className="content-block-title">get_python_code()</div>
+            <div className="content-block-body">
+              <pre>
+                <code>
+                  {displayedMarker || 'Here will be Python code'}
+                  {isTyping && '█'}
+                </code>
+              </pre>
             </div>
           </div>
           <div className="content-block kv">
